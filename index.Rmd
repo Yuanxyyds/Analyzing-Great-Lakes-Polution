@@ -1,5 +1,5 @@
 ---
-title: "JSC370 Final Project"
+title: "Assignment 05"
 author: "Steven Liu"
 output: 
     html_document:
@@ -7,126 +7,498 @@ output:
         toc_float: TRUE
 ---
 
-This is my JSC370 Final Project website.
+## Introduction
 
-```{r message=FALSE, echo=FALSE, warning=FALSE}
-library(data.table)
+This is the website for Assignment 05 for JSC370. The three plots below shows:
+
+1) Adjust Time Series for Mean Phosphorous Level of Great Lakes
+
+2) Heapmap for Phosphorus Level over time by City
+
+3) Interactive Leaflet showing the phosphorous level over multiple period by City
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, include = FALSE)
+library(car)
+library(zoo)
 library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(leaflet)
+library(rvest)
+library(xml2)
+library(patchwork)
+library(leaflet.esri)
+library(shiny)
+library(htmlwidgets)
+library(data.table)
 library(plotly)
 library(knitr)
 library(widgetframe)
 ```
 
-```{r, echo=FALSE}
-cv_states_readin <- 
-  data.table::fread("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-states.csv")
-state_pops <- data.table::fread("https://raw.githubusercontent.com/COVID19Tracking/associated-data/master/us_census_data/us_census_2018_population_estimates_states.csv")
-state_pops$abb <- state_pops$state
-state_pops$state <- state_pops$state_name
-state_pops$state_name <- NULL
-cv_states <- merge(cv_states_readin, state_pops, by="state")
+```{r}
+# Read Data
+water1 <- read.csv("Lake Ontario_Water Quality_2000-present.csv")
+water2 <- read.csv("Lake Erie_Water Quality_2000-present.csv")
+water3 <- read.csv("Lake Superior_Water Quality_2000-present.csv")
+water4 <- read.csv("Lake Huron_Water Quality_2000-present.csv")
+water5 <- read.csv("Georgian Bay_Water Quality_2000-present.csv")
+# Bind data for great lakes together
+water <- rbind(water1, water2, water3, water4, water5)
+```
+
+```{r, eval=FALSE}
+# Add Canada Cities
+city <- html_table(xml2::xml_find_all(
+  read_html(x ="https://www.latlong.net/category/cities-40-15.html"),
+          xpath = "/html/body/main/table"))[[1]]
+for (i in 2:4){
+  html <- paste0(
+    substring("https://www.latlong.net/category/cities-40-15-2.html", 1, 45),
+    '-', i,'.html')
+  city <- bind_rows(city, html_table(xml2::xml_find_all(
+    read_html(x = html),
+    xpath = "/html/body/main/table"))[[1]])
+}
+```
+
+```{r, eval=FALSE}
+# Add U.S. Cities
+city <- bind_rows(city, html_table(xml2::xml_find_all(
+  read_html(x ="https://www.latlong.net/category/cities-236-15.html"),
+          xpath = "/html/body/main/table"))[[1]])
+
+for (i in 2:12){
+  html <- paste0(
+    substring("https://www.latlong.net/category/cities-236-15-2.html", 1, 46),
+    '-', i,'.html')
+  city <- bind_rows(city, html_table(xml2::xml_find_all(
+    read_html(x = html),
+    xpath = "/html/body/main/table"))[[1]])
+}
+```
+
+```{r, eval=FALSE}
+# Add additional cities
+additional_city <- read.csv("Additional_cities.csv")
+additional_city <- additional_city %>%
+  mutate(`Place Name` = Place.Name) %>% 
+  select(-Place.Name)
+
+city <- bind_rows(city, additional_city)
+```
+
+```{r}
+water_reduced <- water %>% 
+  # Rename main variables, and create separate column for year and month
+  mutate(lake = ifelse(WATER_BODY == "GEORGIAN BAY", "LAKE HURON", WATER_BODY),
+         station = paste0(WATER_BODY," ",as.character(as.integer(PSN))), 
+         year = as.integer(substr(STN_DATE, start = 7, stop = 10)),
+         month = as.integer(substr(STN_DATE, start = 4, stop = 5)),
+         yearmon = as.yearmon(paste0(year, "-", month)),
+         range = case_when(year <= 2005 ~ "2000-2005",
+                           (year > 2005 & year <= 2010) ~ "2005-2010",
+                           (year > 2010 & year <= 2015) ~ "2010-2015",
+                           (year > 2015 & year <= 2020) ~ "2015-2020",
+                           TRUE ~ "2020-present"),
+         hazard_name = FULL_NAME,
+         unit = UNITS,
+         value = VALUE,
+         lat = LATITUDE_DD,
+         # We notice that the lon is actually - LONGITUDE
+         lon = - LONGITUDE_DD) %>% 
+ # Select main variables of interest
+  select(lake, station, year, month, yearmon, range, hazard_name, value, lat, lon) 
+```
+
+```{r}
+# Remove NA
+water_reduced <- na.omit(water_reduced)
+water_reduced <- water_reduced %>% filter(value > 0)
+
+# As we notice that the lat and lon for each station is different, we want to use mean as their lat and lon
+water_reduced <- water_reduced %>% group_by(station) %>% mutate(lat = mean(lat),
+                                               lon = mean(lon)) 
+# Remove duplicate
+water_reduced <- unique(water_reduced)
 ```
 
 
-```{r, echo=FALSE}
-cv_states$date <- as.Date(cv_states$date, format="%Y-%m-%d")
-state_list <- unique(cv_states$state)
-cv_states$state <- factor(cv_states$state, levels = state_list)
-abb_list <- unique(cv_states$abb)
-cv_states$abb <- factor(cv_states$abb, levels = abb_list)
-cv_states = cv_states[order(cv_states$state, cv_states$date),]
+```{r}
+# Select the phosphorous 
+water_phos <- water_reduced %>% 
+  filter(hazard_name == "PHOSPHOROUS,TOTAL" | hazard_name == "TOTAL PHOSPHOROUS") %>% 
+  mutate(level = case_when(value < 0.1 ~ "Good", 
+                           value >= 0.1 & value < 0.25 ~ "Poor",
+                           TRUE ~ "Very Bad"))
+# Check for missing/error values
+summary(water_phos)
 ```
 
-  
-```{r, echo=FALSE}
-cv_states <- cv_states %>% 
-  group_by(state) %>% 
-  mutate(
-    new_cases = c(-9999, diff(cases)),
-    new_deaths = c(-9999, diff(deaths))
-  ) %>% 
-  mutate(
-    new_cases = ifelse(new_cases == -9999, cases, new_cases),
-    new_deaths = ifelse(new_deaths == -9999, deaths, new_deaths)
+```{r}
+# Add Canada Cities
+city <- html_table(xml2::xml_find_all(
+  read_html(x ="https://www.latlong.net/category/cities-40-15.html"),
+          xpath = "/html/body/main/table"))[[1]]
+for (i in 2:4){
+  html <- paste0(
+    substring("https://www.latlong.net/category/cities-40-15-2.html", 1, 45),
+    '-', i,'.html')
+  city <- bind_rows(city, html_table(xml2::xml_find_all(
+    read_html(x = html),
+    xpath = "/html/body/main/table"))[[1]])
+}
+```
+
+```{r}
+# Add U.S. Cities
+city <- bind_rows(city, html_table(xml2::xml_find_all(
+  read_html(x ="https://www.latlong.net/category/cities-236-15.html"),
+          xpath = "/html/body/main/table"))[[1]])
+
+for (i in 2:12){
+  html <- paste0(
+    substring("https://www.latlong.net/category/cities-236-15-2.html", 1, 46),
+    '-', i,'.html')
+  city <- bind_rows(city, html_table(xml2::xml_find_all(
+    read_html(x = html),
+    xpath = "/html/body/main/table"))[[1]])
+}
+```
+
+```{r}
+# Add additional cities
+additional_city <- read.csv("Additional_cities.csv")
+additional_city <- additional_city %>%
+  mutate(`Place Name` = Place.Name) %>% 
+  select(-Place.Name)
+
+city <- bind_rows(city, additional_city)
+```
+
+```{r}
+# Lake Cities
+lake_city <- city %>% 
+  filter(Latitude > city[`Place Name` == "Mansfield, OH, USA",]$Latitude)
+lake_city <- lake_city %>% 
+  filter(Latitude < lake_city[`Place Name` == "Fermont, QC, Canada",]$Latitude)
+lake_city <- lake_city %>% 
+  filter(Longitude > lake_city[`Place Name` == "Winkler, MB, Canada",]$Longitude)
+lake_city <- lake_city %>% 
+  filter(Longitude < lake_city[`Place Name` == "Ottawa, ON, Canada",]$Longitude)
+
+lake_city <- lake_city %>% filter(`Place Name` != "Monroe, OH, USA")
+```
+
+```{r}
+# For each station, find its nearest city
+water_phos_with_city <- water_phos %>% 
+  crossing(lake_city) %>% 
+  mutate(distance = sqrt((lat - Latitude) ** 2 + (lon - Longitude) ** 2)) %>% 
+  group_by(station) %>% 
+  filter(distance == min(distance)) %>%
+  mutate(city = `Place Name`,
+         lon_city = Longitude,
+         lat_city = Latitude) %>% 
+  select(-`Place Name`, -Longitude, -Latitude)
+```
+
+```{r}
+# Average Phosphorous per Lake
+average_per_lake <- water_phos %>% group_by(lake, yearmon) %>% 
+  summarise(mean_value = mean(value), n = n())
+```
+
+```{r}
+# Average Phosphorous per Lake adjusted
+average_per_lake_adj <- water_phos %>% group_by(lake, year) %>% 
+  summarise(mean_value = mean(value), n = n())
+```
+
+```{r}
+# Average Phosphorous per Lake Station Regardless on Time
+average_per_lake_station <- water_phos_with_city %>% 
+  group_by(lake, station, lon, lat, lon_city, lat_city, city) %>% 
+  summarise(mean_value = mean(value), 
+            time_difference = max(yearmon) - min(yearmon)) %>%
+  # We want to only consider station with data more than 3 years
+  filter(time_difference > 3)
+```
+
+```{r}
+# Average Phosphorous per Lake Station by Time Period
+average_per_lake_station_with_period <- water_phos_with_city %>% 
+  group_by(lake, station, lon, lat, city, lon_city, lat_city, range) %>% 
+  summarise(mean_value = mean(value), 
+            n = n()) %>% 
+  filter(station %in% average_per_lake_station$station)
+
+```
+
+```{r}
+# Average Phosphorous per Lake - City
+average_per_city <- water_phos_with_city %>% 
+  group_by(lake, lon_city, lat_city, city) %>% 
+  summarise(lon = mean(lon),
+            lat = mean(lat),
+            mean_value = mean(value), 
+            time_difference = max(yearmon) - min(yearmon)) %>%
+  # We want to only consider station with data more than 3 years
+  filter(time_difference > 3) %>% 
+  filter(lake == "LAKE ONTARIO" | lake == "LAKE ERIE")
+
+# 5 Most Polluted Cities per Lake 
+top_5_city_per_lake <- average_per_city %>% 
+  group_by(lake) %>% 
+  slice_max(order_by = mean_value, n = 5)
+```
+```{r}
+# Average Phosphorous per Lake Station by Time Period
+average_per_city_with_period <- water_phos_with_city %>% 
+  group_by(lake, lon_city, lat_city, city, range) %>% 
+  summarise(lon = mean(lon),
+            lat = mean(lat),
+            mean_value = mean(value), 
+            n = n()) %>%
+  filter(city %in% average_per_city$city) %>% 
+  filter(lake == "LAKE ERIE" | lake == "LAKE ONTARIO")
+
+# 5 Most Polluted Cities per Lake 
+top_5_city_per_lake_with_period <- average_per_city_with_period %>% 
+  group_by(lake, range) %>% 
+  slice_max(order_by = mean_value, n = 5)
+
+```
+
+```{r}
+plt_series <- ggplot(
+  average_per_lake_adj, aes(x = year, y = mean_value, colour = lake)) + 
+  geom_line() +
+  theme_bw() + 
+  ggtitle("Adjust Time Series for Mean Phosphorous Level of Great Lakes")
+plotly_series <- ggplotly(plt_series)
+
+```
+```{r}
+city_mat_table <- average_per_city_with_period[,c("city", "range", "mean_value")]  %>% 
+  pivot_wider(names_from = city, values_from = mean_value) %>% 
+  column_to_rownames("range") %>% select(-`St. Thomas, ON, Canada`)
+city_mat <- as.matrix(city_mat_table)
+
+plotly_heatmap <- city_mat_table %>% 
+  plot_ly(
+    # date
+    x = rownames(city_mat_table),
+    # states
+    y = colnames(city_mat_table),
+    # new_cases
+    z = t(city_mat),
+    type = "heatmap"
   )
 ```
 
-```{r, echo=FALSE}
-cv_states  <- cv_states %>% filter(date >= '2022-10-01')
-```
+
+```{r, include = TRUE}
+color_scheme <- colorNumeric(c('green', 'red', 'darkred'),
+                       domain = average_per_lake_station_with_period$mean_value)
+
+interactive_leaflet <- leaflet() %>% 
+  addProviderTiles('OpenStreetMap') %>% 
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 3000, 
+             popup = paste0(average_per_city$city,
+                            ": \n",
+                            average_per_city$mean_value),
+             data = average_per_city, group = "2000-present") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_5_city_per_lake, 
+             popup = paste0(top_5_city_per_lake$city,
+                            ": \n",
+                            top_5_city_per_lake$mean_value), group = "2000-present") %>% 
+
+  # 2000-2005
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 3000, 
+             popup = paste0(average_per_city_with_period[
+              average_per_city_with_period$range == "2000-2005",
+             ]$city,
+                            ": \n",
+                           average_per_city_with_period[
+              average_per_city_with_period$range == "2000-2005",
+             ]$mean_value),
+             data = average_per_city_with_period[
+              average_per_city_with_period$range == "2000-2005",
+             ], group = "2000-2005") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2000-2005",
+              ], 
+             popup = paste0(top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2000-2005",
+              ]$city,
+                            ": \n",
+                            top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2000-2005",
+              ]$mean_value), group = "2000-2005") %>%  
   
-
-```{r, echo=FALSE}
-cv_states <- cv_states %>% mutate(
-  new_cases = ifelse(new_cases < 0, 0, new_cases),
-  new_deaths = ifelse(new_deaths < 0, 0, new_deaths)
-)
-
-
-```
-
-
-```{r, echo=FALSE}
-cv_states <- cv_states %>% 
-  mutate(
-    per100k = round(cases / population * 1e5, digits = 1),
-    newper100k = round(new_cases / population * 1e5, digits = 1),
-    deathsper100k = round(deaths / population * 1e5, digits = 1),
-    newdeathsper100k = round(new_deaths / population * 1e5, digits = 1)
+  # 2005-2010
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 3000, 
+             popup = paste0(average_per_city_with_period[
+              average_per_city_with_period$range == "2005-2010",
+             ]$city,
+                            ": \n",
+                           average_per_city_with_period[
+              average_per_city_with_period$range == "2005-2010",
+             ]$mean_value),
+             data = average_per_city_with_period[
+              average_per_city_with_period$range == "2005-2010",
+             ], group = "2005-2010") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2005-2010",
+              ], 
+             popup = paste0(top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2005-2010",
+              ]$city,
+                            ": \n",
+                            top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2005-2010",
+              ]$mean_value), group = "2005-2010") %>%  
+  # 2010-2015
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 3000, 
+             popup = paste0(average_per_city_with_period[
+              average_per_city_with_period$range == "2010-2015",
+             ]$city,
+                            ": \n",
+                           average_per_city_with_period[
+              average_per_city_with_period$range == "2010-2015",
+             ]$mean_value),
+             data = average_per_city_with_period[
+              average_per_city_with_period$range == "2010-2015",
+             ], group = "2010-2015") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2010-2015",
+              ], 
+             popup = paste0(top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2010-2015",
+              ]$city,
+                            ": \n",
+                            top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2010-2015",
+              ]$mean_value), group = "2010-2015") %>%  
+  
+  # 2015-2020
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 3000, 
+             popup = paste0(average_per_city_with_period[
+              average_per_city_with_period$range == "2015-2020",
+             ]$city,
+                            ": \n",
+                           average_per_city_with_period[
+              average_per_city_with_period$range == "2015-2020",
+             ]$mean_value),
+             data = average_per_city_with_period[
+              average_per_city_with_period$range == "2015-2020",
+             ], group = "2015-2020") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2015-2020",
+              ], 
+             popup = paste0(top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2015-2020",
+              ]$city,
+                            ": \n",
+                            top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2015-2020",
+              ]$mean_value), group = "2015-2020") %>%  
+  # 2020-present
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 3000, 
+             popup = paste0(average_per_city_with_period[
+              average_per_city_with_period$range == "2020-present",
+             ]$city,
+                            ": \n",
+                           average_per_city_with_period[
+              average_per_city_with_period$range == "2020-present",
+             ]$mean_value),
+             data = average_per_city_with_period[
+              average_per_city_with_period$range == "2020-present",
+             ], group = "2020-present") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2020-present",
+              ], 
+             popup = paste0(top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2020-present",
+              ]$city,
+                            ": \n",
+                            top_5_city_per_lake_with_period[
+              top_5_city_per_lake_with_period$range == "2020-present",
+              ]$mean_value), group = "2020-present") %>%  
+  
+  addLegend("bottomleft", pal = color_scheme, 
+            average_per_lake_station$mean_value,
+            title = "Phosphorous (mg/L)", 
+            opacity = 1) %>% 
+  setView(lng = -80, lat = 43, zoom = 6.2) %>%
+  # Layers control
+  addLayersControl(
+    baseGroups = c("2000-present", "2000-2005", "2005-2010", "2010-2015",
+                   "2015-2020", "2020-present"),
+    options = layersControlOptions(collapsed = FALSE)
   )
-
 ```
-
-```{r, echo=FALSE}
-cv_states <- cv_states %>% mutate(
-  naive_cfr = deaths / cases
-)
-```
-
-```{r, echo=FALSE}
-cv_states_today <- cv_states %>% filter(date == max(cv_states$date))
-```
-
-```{r, echo=FALSE}
-p1_scatter <- cv_states_today %>% 
-  plot_ly(x = ~pop_density, y = ~deathsper100k,
-          type = 'scatter', mode = 'markers', color = ~state,
-          size = ~population, sizes = c(5, 70), marker = list(sizemode='diameter', opacity=0.5),
-          hoverinfo = 'text',
-          text = ~paste( paste(state, ":", sep=""), paste(" Cases per 100k: ", per100k, sep="") , paste(" Deaths per 100k: ",
-                        deathsper100k, sep=""), sep = "<br>")) %>%
-  layout(title = "Population-normalized COVID-19 deaths vs. population density",
-                  yaxis = list(title = "Deaths per 100k"), xaxis = list(title = "Population Density"),
-         hovermode = "compare")
-
-# filter out "District of Columbia"
-cv_states_today_scatter <- cv_states_today %>% filter(state!="District of Columbia")
-
-p2_scatter <- cv_states_today_scatter %>% 
-  plot_ly(x = ~pop_density, y = ~deathsper100k,
-          type = 'scatter', mode = 'markers', color = ~state,
-          size = ~population, sizes = c(5, 70), marker = list(sizemode='diameter', opacity=0.5),
-          hoverinfo = 'text',
-          text = ~paste( paste(state, ":", sep=""), paste(" Cases per 100k: ", per100k, sep="") , paste(" Deaths per 100k: ",
-                        deathsper100k, sep=""), sep = "<br>")) %>%
-  layout(title = "Population-normalized COVID-19 deaths vs. population density",
-                  yaxis = list(title = "Deaths per 100k"), xaxis = list(title = "Population Density"),
-         hovermode = "compare")
-```
-
 
 ## Showcasing plots {.tabset}
 
 ### Figure 1
 
-```{r echo=FALSE}
-p1_scatter
+```{r, include=TRUE}
+plotly_series
 ```
 
 ### Figure 2
 
-```{r echo=FALSE}
-p2_scatter
+```{r, include=TRUE}
+plotly_heatmap <- plotly_heatmap %>% 
+  layout(
+    title = "Heapmap for Phosphrous Level over time by City"
+  )
+plotly_heatmap 
 ```
 
-{-}
+### Figure 3
+
+```{r, include=TRUE}
+interactive_leaflet
+```
+
