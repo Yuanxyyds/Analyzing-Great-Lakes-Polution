@@ -1,5 +1,5 @@
 ---
-title: "Assignment 05"
+title: "JSC370 Final Project - Identify and Monitor the Most Phosphorous-Polluted Locations in the Great Lakes"
 author: "Steven Liu"
 output: 
     html_document:
@@ -7,15 +7,9 @@ output:
         toc_float: TRUE
 ---
 
-## Introduction
+## Description of the Project
 
-This is the website for Assignment 05 for JSC370. The three plots below shows:
-
-1) Adjust Time Series for Mean Phosphorous Level of Great Lakes
-
-2) Heapmap for Phosphorus Level over time by City
-
-3) Interactive Leaflet showing the phosphorous level over multiple period by City
+This project focuses on investigating the water quality of the Great Lakes region in North America, with a specific focus on phosphorus levels in the water. This project mainly uses two datasets: 1) The water quality dataset from [The Canadian Open Data Portal](https://data-donnees.ec.gc.ca/data/substances/monitor/great-lakes-water-quality-monitoring-and-aquatic-ecosystem-health-data/great-lakes-water-quality-monitoring-and-surveillance-data/?lang=en), and 2) The city dataset, obtained through web scraping from [Latlong](https://www.latlong.net/category/cities-236-15.html). They explored and visualized the data using time series plots, boxplots, and interactive maps. The results of their analysis showed that Lake Erie and Lake Ontario have the highest phosphorus levels and are facing more severe pollution issues than the other Great Lakes. They also identified specific cities with the worst water quality, such as Hamilton, ON, Canada; Niagara Falls, NY, USA; Toledo, OH, USA; Sandusky, OH, USA; and Cleveland, OH, USA. Furthermore, they have investigated whether there is evidence of improvement in water quality at the identified locations from 2000 to the present. they have found no evidence of improvement and, in fact, have identified a worsening trend in water quality over time, especially for the west-coast cities. Overall, this research paper provides valuable insights into the water quality issues in the Great Lakes region and can inform future efforts to improve water quality in the area.
 
 
 ```{r setup, include=FALSE}
@@ -40,11 +34,11 @@ library(widgetframe)
 
 ```{r}
 # Read Data
-water1 <- read.csv("Lake Ontario_Water Quality_2000-present.csv")
-water2 <- read.csv("Lake Erie_Water Quality_2000-present.csv")
-water3 <- read.csv("Lake Superior_Water Quality_2000-present.csv")
-water4 <- read.csv("Lake Huron_Water Quality_2000-present.csv")
-water5 <- read.csv("Georgian Bay_Water Quality_2000-present.csv")
+water1 <- read.csv("data/Lake Ontario_Water Quality_2000-present.csv")
+water2 <- read.csv("data/Lake Erie_Water Quality_2000-present.csv")
+water3 <- read.csv("data/Lake Superior_Water Quality_2000-present.csv")
+water4 <- read.csv("data/Lake Huron_Water Quality_2000-present.csv")
+water5 <- read.csv("data/Georgian Bay_Water Quality_2000-present.csv")
 # Bind data for great lakes together
 water <- rbind(water1, water2, water3, water4, water5)
 ```
@@ -82,7 +76,7 @@ for (i in 2:12){
 
 ```{r, eval=FALSE}
 # Add additional cities
-additional_city <- read.csv("Additional_cities.csv")
+additional_city <- read.csv("data/Additional_cities.csv")
 additional_city <- additional_city %>%
   mutate(`Place Name` = Place.Name) %>% 
   select(-Place.Name)
@@ -119,8 +113,8 @@ water_reduced <- na.omit(water_reduced)
 water_reduced <- water_reduced %>% filter(value > 0)
 
 # As we notice that the lat and lon for each station is different, we want to use mean as their lat and lon
-water_reduced <- water_reduced %>% group_by(station) %>% mutate(lat = mean(lat),
-                                               lon = mean(lon)) 
+water_reduced <- water_reduced %>% group_by(station) %>% mutate(lat = round(mean(lat), 3),
+                                               lon = round(mean(lon), 3))
 # Remove duplicate
 water_reduced <- unique(water_reduced)
 ```
@@ -170,7 +164,7 @@ for (i in 2:12){
 
 ```{r}
 # Add additional cities
-additional_city <- read.csv("Additional_cities.csv")
+additional_city <- read.csv("data/Additional_cities.csv")
 additional_city <- additional_city %>%
   mutate(`Place Name` = Place.Name) %>% 
   select(-Place.Name)
@@ -196,7 +190,7 @@ lake_city <- lake_city %>% filter(`Place Name` != "Monroe, OH, USA")
 # For each station, find its nearest city
 water_phos_with_city <- water_phos %>% 
   crossing(lake_city) %>% 
-  mutate(distance = sqrt((lat - Latitude) ** 2 + (lon - Longitude) ** 2)) %>% 
+  mutate(distance = round(sqrt((lat - Latitude) ** 2 + (lon - Longitude) ** 2), 3))%>% 
   group_by(station) %>% 
   filter(distance == min(distance)) %>%
   mutate(city = `Place Name`,
@@ -208,20 +202,20 @@ water_phos_with_city <- water_phos %>%
 ```{r}
 # Average Phosphorous per Lake
 average_per_lake <- water_phos %>% group_by(lake, yearmon) %>% 
-  summarise(mean_value = mean(value), n = n())
+  summarise(mean_value = round(mean(value), 5), n = n())
 ```
 
 ```{r}
 # Average Phosphorous per Lake adjusted
 average_per_lake_adj <- water_phos %>% group_by(lake, year) %>% 
-  summarise(mean_value = mean(value), n = n())
+  summarise(mean_value = round(mean(value), 5), n = n())
 ```
 
 ```{r}
 # Average Phosphorous per Lake Station Regardless on Time
 average_per_lake_station <- water_phos_with_city %>% 
   group_by(lake, station, lon, lat, lon_city, lat_city, city) %>% 
-  summarise(mean_value = mean(value), 
+  summarise(mean_value = round(mean(value), 5), 
             time_difference = max(yearmon) - min(yearmon)) %>%
   # We want to only consider station with data more than 3 years
   filter(time_difference > 3)
@@ -231,7 +225,7 @@ average_per_lake_station <- water_phos_with_city %>%
 # Average Phosphorous per Lake Station by Time Period
 average_per_lake_station_with_period <- water_phos_with_city %>% 
   group_by(lake, station, lon, lat, city, lon_city, lat_city, range) %>% 
-  summarise(mean_value = mean(value), 
+  summarise(mean_value = round(mean(value), 5), 
             n = n()) %>% 
   filter(station %in% average_per_lake_station$station)
 
@@ -241,9 +235,9 @@ average_per_lake_station_with_period <- water_phos_with_city %>%
 # Average Phosphorous per Lake - City
 average_per_city <- water_phos_with_city %>% 
   group_by(lake, lon_city, lat_city, city) %>% 
-  summarise(lon = mean(lon),
-            lat = mean(lat),
-            mean_value = mean(value), 
+  summarise(lon = round(mean(lon), 3),
+            lat = round(mean(lat), 3),
+            mean_value = round(mean(value), 5), 
             time_difference = max(yearmon) - min(yearmon)) %>%
   # We want to only consider station with data more than 3 years
   filter(time_difference > 3) %>% 
@@ -258,9 +252,9 @@ top_5_city_per_lake <- average_per_city %>%
 # Average Phosphorous per Lake Station by Time Period
 average_per_city_with_period <- water_phos_with_city %>% 
   group_by(lake, lon_city, lat_city, city, range) %>% 
-  summarise(lon = mean(lon),
-            lat = mean(lat),
-            mean_value = mean(value), 
+  summarise(lon = round(mean(lon), 3),
+            lat = round(mean(lat), 3),
+            mean_value = round(mean(value), 5), 
             n = n()) %>%
   filter(city %in% average_per_city$city) %>% 
   filter(lake == "LAKE ERIE" | lake == "LAKE ONTARIO")
@@ -299,12 +293,227 @@ plotly_heatmap <- city_mat_table %>%
   )
 ```
 
+```{r}
+# 10 Most Polluted stations per Lake 
+top_10_station_per_lake <- average_per_lake_station %>% 
+  group_by(lake) %>% 
+  slice_max(order_by = mean_value, n = 10)
+
+top_10_station_per_lake
+```
+
+```{r}
+# 10 Most Polluted stations per Lake 
+top_10_station_per_lake_with_period <- average_per_lake_station_with_period %>% 
+  group_by(lake, range) %>% 
+  slice_max(order_by = mean_value, n = 10)
+
+top_10_station_per_lake_with_period
+```
+
+
+```{r, include = TRUE}
+
+color_scheme <- colorNumeric(c('green', 'red', 'darkred'),
+                       domain = average_per_lake_station_with_period$mean_value)
+  
+
+interactive_leaflet1 <- leaflet() %>% 
+  addProviderTiles('OpenStreetMap') %>% 
+  # Default
+  addPolylines(
+    lng = c(-180, 180),
+    lat = c(45, 45),
+    dashArray = "10, 10",
+    color = "red"
+  ) %>% 
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 1000, 
+             popup = paste0(average_per_lake_station$station,
+                            ": \n",
+                            average_per_lake_station$mean_value),
+             data = average_per_lake_station, 
+             group = "2000-present") %>% 
+  addAwesomeMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_10_station_per_lake, 
+             popup = paste0(top_10_station_per_lake$station,
+                            ": \n",
+                            top_10_station_per_lake$mean_value), 
+             group = "2000-present") %>% 
+  # 2000-2005
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 1000, 
+             popup = paste0(average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2000-2005",
+             ]$station,
+                            ": \n",
+                            average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2000-2005",
+             ]$mean_value),
+             data = average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2000-2005",
+             ], 
+             group = "2000-2005") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2000-2005",
+             ], 
+             popup = paste0(top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2000-2005",
+             ]$station,
+                            ": \n",
+                            top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2000-2005",
+             ]$mean_value), 
+             group = "2000-2005") %>% 
+  # 2005-2010
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 1000, 
+             popup = paste0(average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2005-2010",
+             ]$station,
+                            ": \n",
+                            average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2005-2010",
+             ]$mean_value),
+             data = average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2005-2010",
+             ], 
+             group = "2005-2010") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2005-2010",
+             ], 
+             popup = paste0(top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2005-2010",
+             ]$station,
+                            ": \n",
+                            top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2005-2010",
+             ]$mean_value), 
+             group = "2005-2010") %>% 
+  # 2010-2015
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 1000, 
+             popup = paste0(average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2010-2015",
+             ]$station,
+                            ": \n",
+                            average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2010-2015",
+             ]$mean_value),
+             data = average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2010-2015",
+             ], 
+             group = "2010-2015") %>% 
+   addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2010-2015",
+             ], 
+             popup = paste0(top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2010-2015",
+             ]$station,
+                            ": \n",
+                            top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2010-2015",
+             ]$mean_value), 
+             group = "2010-2015") %>% 
+  # 2015-2020
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 1000, 
+             popup = paste0(average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2015-2020",
+             ]$station,
+                            ": \n",
+                            average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2015-2020",
+             ]$mean_value),
+             data = average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2015-2020",
+             ], 
+             group = "2015-2020") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2015-2020",
+             ], 
+             popup = paste0(top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2015-2020",
+             ]$station,
+                            ": \n",
+                            top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2015-2020",
+             ]$mean_value), 
+             group = "2015-2020")%>% 
+  # 2020-present
+  addCircles(lng = ~lon,
+             lat = ~lat, 
+             color = ~color_scheme(mean_value), 
+             fillOpacity = 1, 
+             radius = 1000, 
+             popup = paste0(average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2020-present",
+             ]$station,
+                            ": \n",
+                            average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2020-present",
+             ]$mean_value),
+             data = average_per_lake_station_with_period[
+               average_per_lake_station_with_period$range == "2020-present",
+             ], 
+             group = "2020-present") %>% 
+  addMarkers(lat=~lat, 
+             lng=~lon, 
+             data = top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2020-present",
+             ], 
+             popup = paste0(top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2020-present",
+             ]$station,
+                            ": \n",
+                            top_10_station_per_lake_with_period[
+               top_10_station_per_lake_with_period$range == "2020-present",
+             ]$mean_value), 
+             group = "2020-present")%>% 
+
+  addLegend("bottomleft", pal = color_scheme, 
+            average_per_lake_station$mean_value,
+            title = "Phosphorous (mg/L)", 
+            opacity = 1) %>% 
+  setView(lng = -81, lat = 45, zoom = 5.3) %>%
+  # Layers control
+  addLayersControl(
+    baseGroups = c("2000-present", "2000-2005", "2005-2010",
+                   "2010-2015", "2015-2020","2020-present"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
 
 ```{r, include = TRUE}
 color_scheme <- colorNumeric(c('green', 'red', 'darkred'),
                        domain = average_per_lake_station_with_period$mean_value)
 
-interactive_leaflet <- leaflet() %>% 
+interactive_leaflet2 <- leaflet() %>% 
   addProviderTiles('OpenStreetMap') %>% 
   addCircles(lng = ~lon,
              lat = ~lat, 
@@ -478,15 +687,44 @@ interactive_leaflet <- leaflet() %>%
   )
 ```
 
+
 ## Showcasing plots {.tabset}
 
+The following are the four main interactive figures that display the results of this research:
+
+Figure 1 illustrates the Adjusted Time Series for the Mean Phosphorous Levels of the Great Lakes, depicting the trend of phosphorous levels in the lakes from 2000 to the present.
+
+Figure 2 presents the average phosphorous levels for each observation station (shown by dots) in all Great Lakes, highlighting the top 10 polluted stations using markers.
+
+Figure 3 displays the average phosphorous levels for each city (represented by dots) near Lake Erie and Lake Ontario, labeling the top 5 polluted cities with markers.
+
+Figure 4 shows the Heatmap for Phosphorous Levels over time by City, demonstrating the phosphorous levels of cities near Lake Erie and Lake Ontario from 2000 to the present.
+
+
 ### Figure 1
+
 
 ```{r, include=TRUE}
 plotly_series
 ```
 
+
+
 ### Figure 2
+
+
+```{r, include=TRUE}
+interactive_leaflet1
+```
+### Figure 3
+
+
+```{r, include=TRUE}
+interactive_leaflet2
+```
+
+### Figure 4
+
 
 ```{r, include=TRUE}
 plotly_heatmap <- plotly_heatmap %>% 
@@ -496,9 +734,4 @@ plotly_heatmap <- plotly_heatmap %>%
 plotly_heatmap 
 ```
 
-### Figure 3
-
-```{r, include=TRUE}
-interactive_leaflet
-```
-
+## Download PDF report

@@ -1,12 +1,12 @@
-name: "my-website"
+name: "JSC370 Final"
 output_dir: "."
 navbar:
-  title: "Assignment 05"
+  title: "JSC370 Final Project"
   left:
-    - text: "Assigment 05 Page"
+    - text: "Home"
       href: index.html
-    - text: "Lab 12 Page"
-      href: second.html
+    - text: "HTML Report"
+      href: Final_html.html
 output:
   html_document:
     theme: cosmo
