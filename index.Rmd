@@ -694,9 +694,9 @@ The following are the four main interactive figures that display the results of 
 
 Figure 1 illustrates the Adjusted Time Series for the Mean Phosphorous Levels of the Great Lakes, depicting the trend of phosphorous levels in the lakes from 2000 to the present.
 
-Figure 2 presents the average phosphorous levels for each observation station (shown by dots) in all Great Lakes, highlighting the top 10 polluted stations using markers.
+Figure 2 (Leflet 1) presents the average phosphorous levels for each observation station (shown by dots) in all Great Lakes, highlighting the top 10 polluted stations using markers.
 
-Figure 3 displays the average phosphorous levels for each city (represented by dots) near Lake Erie and Lake Ontario, labeling the top 5 polluted cities with markers.
+Figure 3 (Leflet 2) displays the average phosphorous levels for each city (represented by dots) near Lake Erie and Lake Ontario, labeling the top 5 polluted cities with markers.
 
 Figure 4 shows the Heatmap for Phosphorous Levels over time by City, demonstrating the phosphorous levels of cities near Lake Erie and Lake Ontario from 2000 to the present.
 
@@ -710,13 +710,13 @@ plotly_series
 
 
 
-### Figure 2
+### Figure 2 (Leflet 1)
 
 
 ```{r, include=TRUE}
 interactive_leaflet1
 ```
-### Figure 3
+### Figure 3 (Leflet 2)
 
 
 ```{r, include=TRUE}
