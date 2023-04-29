@@ -735,3 +735,7 @@ plotly_heatmap
 ```
 
 ## Download PDF report
+
+HTML report can be viewed [here](https://yuanxyyds.github.io/JSC370-Final-Project/Final_html.html)
+
+Download PDF report [here](https://github.com/Yuanxyyds/JSC370-Final-Project/raw/main/Final_pdf.pdf)
